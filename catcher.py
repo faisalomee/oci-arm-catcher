@@ -1,28 +1,81 @@
-name: OCI ARM Catcher
-on:
-  schedule:
-    - cron: '*/15 * * * *'
-  workflow_dispatch:
+import os
+import oci
+import sys
 
-jobs:
-  catch:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - name: Install OCI SDK
-        run: pip install oci
-      - name: Run catcher
-        env:
-          OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
-          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
-          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
-          OCI_REGION: ${{ secrets.OCI_REGION }}
-          OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
-          OCI_COMPARTMENT_OCID: ${{ secrets.OCI_COMPARTMENT_OCID }}
-          OCI_AVAILABILITY_DOMAIN: ${{ secrets.OCI_AVAILABILITY_DOMAIN }}
-          OCI_SUBNET_OCID: ${{ secrets.OCI_SUBNET_OCID }}
-          OCI_SSH_PUBLIC_KEY: ${{ secrets.OCI_SSH_PUBLIC_KEY }}
-        run: python catcher.py
+def main():
+    config = {
+        "user": os.environ["OCI_USER_OCID"],
+        "tenancy": os.environ["OCI_TENANCY_OCID"],
+        "fingerprint": os.environ["OCI_FINGERPRINT"],
+        "region": os.environ["OCI_REGION"],
+    }
+    signer = oci.signer.Signer(
+        tenancy=config["tenancy"],
+        user=config["user"],
+        fingerprint=config["fingerprint"],
+        private_key_file_location=None,
+        private_key_content=os.environ["OCI_PRIVATE_KEY"].replace("\\n", "\n"),
+    )
+
+    compute = oci.core.ComputeClient(config, signer=signer)
+    compartment_id = os.environ["OCI_COMPARTMENT_OCID"]
+    availability_domain = os.environ["OCI_AVAILABILITY_DOMAIN"]
+    subnet_id = os.environ["OCI_SUBNET_OCID"]
+    ssh_key = os.environ["OCI_SSH_PUBLIC_KEY"]
+    display_name = "omee-arm"
+
+    existing = compute.list_instances(
+        compartment_id=compartment_id,
+        display_name=display_name
+    ).data
+    active = [i for i in existing if i.lifecycle_state not in ["TERMINATED", "TERMINATING"]]
+    if active:
+        print("Already created. Nothing to do.")
+        sys.exit(0)
+
+    images = compute.list_images(
+        compartment_id=compartment_id,
+        operating_system="Canonical Ubuntu",
+        operating_system_version="24.04",
+        shape="VM.Standard.A1.Flex",
+        sort_by="TIMECREATED",
+        sort_order="DESC"
+    ).data
+    if not images:
+        print("Ubuntu 24.04 ARM image not found.")
+        sys.exit(1)
+    image_id = images[0].id
+
+    instance_details = oci.core.models.LaunchInstanceDetails(
+        compartment_id=compartment_id,
+        availability_domain=availability_domain,
+        shape="VM.Standard.A1.Flex",
+        shape_config=oci.core.models.LaunchInstanceShapeConfigDetails(
+            ocpus=2,
+            memory_in_gbs=12
+        ),
+        source_details=oci.core.models.InstanceSourceViaImageDetails(
+            image_id=image_id
+        ),
+        create_vnic_details=oci.core.models.CreateVnicDetails(
+            subnet_id=subnet_id,
+            assign_public_ip=True
+        ),
+        metadata={"ssh_authorized_keys": ssh_key},
+        display_name=display_name
+    )
+
+    try:
+        response = compute.launch_instance(instance_details)
+        print("SUCCESS! Server created.")
+        print(response.data)
+    except oci.exceptions.ServiceError as e:
+        if "Out of capacity" in str(e.message) or "Out of host capacity" in str(e.message):
+            print("No capacity yet. Will try again next run.")
+            sys.exit(0)
+        else:
+            print("Error: " + str(e))
+            sys.exit(1)
+
+if __name__ == "__main__":
+    main()
