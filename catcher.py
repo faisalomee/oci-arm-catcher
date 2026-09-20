@@ -8,22 +8,17 @@ def main():
         "tenancy": os.environ["OCI_TENANCY_OCID"],
         "fingerprint": os.environ["OCI_FINGERPRINT"],
         "region": os.environ["OCI_REGION"],
+        "key_content": os.environ["OCI_PRIVATE_KEY"].replace("\\n", "\n"),
     }
-    signer = oci.signer.Signer(
-        tenancy=config["tenancy"],
-        user=config["user"],
-        fingerprint=config["fingerprint"],
-        private_key_file_location=None,
-        private_key_content=os.environ["OCI_PRIVATE_KEY"].replace("\\n", "\n"),
-    )
 
-    compute = oci.core.ComputeClient(config, signer=signer)
+    compute = oci.core.ComputeClient(config)
     compartment_id = os.environ["OCI_COMPARTMENT_OCID"]
     availability_domain = os.environ["OCI_AVAILABILITY_DOMAIN"]
     subnet_id = os.environ["OCI_SUBNET_OCID"]
     ssh_key = os.environ["OCI_SSH_PUBLIC_KEY"]
     display_name = "omee-arm"
 
+    # Check if instance already exists
     existing = compute.list_instances(
         compartment_id=compartment_id,
         display_name=display_name
@@ -33,6 +28,7 @@ def main():
         print("Already created. Nothing to do.")
         sys.exit(0)
 
+    # Find Ubuntu 24.04 ARM image
     images = compute.list_images(
         compartment_id=compartment_id,
         operating_system="Canonical Ubuntu",
@@ -46,6 +42,7 @@ def main():
         sys.exit(1)
     image_id = images[0].id
 
+    # Try to launch instance
     instance_details = oci.core.models.LaunchInstanceDetails(
         compartment_id=compartment_id,
         availability_domain=availability_domain,
