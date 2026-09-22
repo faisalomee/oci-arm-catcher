@@ -1,3 +1,4 @@
+```python
 import os
 import oci
 import sys
@@ -26,7 +27,7 @@ def main():
     print("Compartment: " + compartment_id)
     print("Subnet: " + subnet_id)
 
-    # Keep trying every 15 minutes until the server is created
+    # Keep trying until the server is created
     while True:
         print("\nChecking Oracle ARM capacity...")
 
@@ -98,6 +99,7 @@ def main():
 
             try:
                 response = compute.launch_instance(instance_details)
+
                 print("SUCCESS! Server created.")
                 print(response.data)
                 sys.exit(0)
@@ -110,6 +112,13 @@ def main():
                     print("Waiting 15 minutes before next attempt...")
                     time.sleep(900)
                     continue
+
+                elif e.status == 429:
+                    print("Rate limited (429).")
+                    print("Waiting 60 minutes before next attempt...")
+                    time.sleep(3600)
+                    continue
+
                 else:
                     print("Error code: " + str(e.status))
                     print("Error message: " + message)
@@ -123,3 +132,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+```
