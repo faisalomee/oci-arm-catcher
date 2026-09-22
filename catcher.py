@@ -1,8 +1,9 @@
-```python
 import os
-import oci
 import sys
 import time
+
+import oci
+
 
 def main():
     config = {
@@ -23,23 +24,23 @@ def main():
 
     display_name = "omee-arm"
 
-    print("Tenancy: " + config["tenancy"])
-    print("Compartment: " + compartment_id)
-    print("Subnet: " + subnet_id)
+    print("Tenancy:", config["tenancy"])
+    print("Compartment:", compartment_id)
+    print("Subnet:", subnet_id)
 
-    # Keep trying until the server is created
     while True:
         print("\nChecking Oracle ARM capacity...")
 
         try:
             existing = compute.list_instances(
                 compartment_id=compartment_id,
-                display_name=display_name
+                display_name=display_name,
             ).data
 
             active = [
-                i for i in existing
-                if i.lifecycle_state not in ["TERMINATED", "TERMINATING"]
+                instance
+                for instance in existing
+                if instance.lifecycle_state not in ["TERMINATED", "TERMINATING"]
             ]
 
             if active:
@@ -55,10 +56,10 @@ def main():
                 sys.exit(1)
 
             ad_name = ads[0].name
-            print("Using Availability Domain: " + ad_name)
+            print("Using Availability Domain:", ad_name)
 
             subnet = network.get_subnet(subnet_id).data
-            print("Subnet OK: " + subnet.display_name)
+            print("Subnet OK:", subnet.display_name)
 
             images = compute.list_images(
                 compartment_id=compartment_id,
@@ -66,7 +67,7 @@ def main():
                 operating_system_version="24.04",
                 shape="VM.Standard.A1.Flex",
                 sort_by="TIMECREATED",
-                sort_order="DESC"
+                sort_order="DESC",
             ).data
 
             if not images:
@@ -74,7 +75,7 @@ def main():
                 sys.exit(1)
 
             image_id = images[0].id
-            print("Using image: " + images[0].display_name)
+            print("Using image:", images[0].display_name)
 
             instance_details = oci.core.models.LaunchInstanceDetails(
                 compartment_id=compartment_id,
@@ -82,19 +83,19 @@ def main():
                 shape="VM.Standard.A1.Flex",
                 shape_config=oci.core.models.LaunchInstanceShapeConfigDetails(
                     ocpus=2,
-                    memory_in_gbs=12
+                    memory_in_gbs=12,
                 ),
                 source_details=oci.core.models.InstanceSourceViaImageDetails(
-                    image_id=image_id
+                    image_id=image_id,
                 ),
                 create_vnic_details=oci.core.models.CreateVnicDetails(
                     subnet_id=subnet_id,
-                    assign_public_ip=True
+                    assign_public_ip=True,
                 ),
                 metadata={
-                    "ssh_authorized_keys": ssh_key
+                    "ssh_authorized_keys": ssh_key,
                 },
-                display_name=display_name
+                display_name=display_name,
             )
 
             try:
@@ -102,6 +103,7 @@ def main():
 
                 print("SUCCESS! Server created.")
                 print(response.data)
+
                 sys.exit(0)
 
             except oci.exceptions.ServiceError as e:
@@ -113,23 +115,21 @@ def main():
                     time.sleep(900)
                     continue
 
-                elif e.status == 429:
+                if e.status == 429:
                     print("Rate limited (429).")
                     print("Waiting 60 minutes before next attempt...")
                     time.sleep(3600)
                     continue
 
-                else:
-                    print("Error code: " + str(e.status))
-                    print("Error message: " + message)
-                    sys.exit(1)
+                print("Error code:", e.status)
+                print("Error message:", message)
+                sys.exit(1)
 
         except Exception as e:
-            print("Unexpected error: " + str(e))
+            print("Unexpected error:", str(e))
             print("Waiting 15 minutes before retry...")
             time.sleep(900)
 
 
 if __name__ == "__main__":
     main()
-```
