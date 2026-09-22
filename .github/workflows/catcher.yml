@@ -1,4 +1,3 @@
-```yaml
 name: OCI ARM Catcher
 
 on:
@@ -36,4 +35,3 @@ jobs:
           OCI_SUBNET_OCID: ${{ secrets.OCI_SUBNET_OCID }}
           OCI_SSH_PUBLIC_KEY: ${{ secrets.OCI_SSH_PUBLIC_KEY }}
         run: python catcher.py
-```
